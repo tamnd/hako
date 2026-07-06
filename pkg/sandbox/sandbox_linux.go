@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -52,5 +54,10 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		Pdeathsig: syscall.SIGKILL,
 	}
 	cmd.WaitDelay = 3 * time.Second
-	return wait(ctx, cmd)
+	res, err := wait(ctx, cmd)
+	if err != nil && errors.Is(err, os.ErrPermission) {
+		err = fmt.Errorf("%w\ncreating user namespaces seems to be blocked; "+
+			"on Ubuntu 24.04+ try: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", err)
+	}
+	return res, err
 }

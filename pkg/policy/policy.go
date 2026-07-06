@@ -20,6 +20,12 @@ type Duration struct {
 	time.Duration
 }
 
+// MarshalText keeps JSON and TOML symmetric with UnmarshalText; the
+// Linux backend round-trips the policy through JSON to its init stage.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(d.Duration.String()), nil
+}
+
 func (d *Duration) UnmarshalText(b []byte) error {
 	v, err := time.ParseDuration(string(b))
 	if err != nil {
