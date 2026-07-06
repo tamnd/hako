@@ -29,6 +29,7 @@ type policyFlags struct {
 	env     []string
 	passEnv []string
 	allEnv  bool
+	audit   string
 }
 
 func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
@@ -40,7 +41,7 @@ func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
 	fl.BoolVar(&f.net, "net", false, "allow unrestricted network access")
 	fl.StringArrayVar(&f.allowHost, "allow-host", nil, "allow network only to this host, via a local proxy (repeatable; host or host:port, *.domain ok)")
 	fl.DurationVar(&f.timeout, "timeout", 0, "kill the command after this long (e.g. 5m)")
-	fl.IntVar(&f.mem, "mem", 0, "memory ceiling in MB (RLIMIT_AS)")
+	fl.IntVar(&f.mem, "mem", 0, "memory ceiling in MB (cgroup on Linux, RLIMIT_AS on macOS)")
 	fl.IntVar(&f.cpu, "cpu", 0, "CPU time ceiling in seconds")
 	fl.IntVar(&f.procs, "procs", 0, "max processes")
 	fl.IntVar(&f.files, "files", 0, "max open files")
@@ -48,6 +49,7 @@ func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
 	fl.StringArrayVar(&f.env, "env", nil, "set KEY=VALUE in the child environment (repeatable)")
 	fl.StringArrayVar(&f.passEnv, "pass-env", nil, "pass this env var through (glob ok, repeatable)")
 	fl.BoolVar(&f.allEnv, "all-env", false, "pass the entire environment through (leaks tokens, be sure)")
+	fl.StringVar(&f.audit, "audit", "", "append a JSONL record of the run and every denied access to this file")
 }
 
 // resolve turns preset/file/flags into the effective policy plus the

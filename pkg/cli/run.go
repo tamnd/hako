@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamnd/hako/pkg/audit"
 	"github.com/tamnd/hako/pkg/sandbox"
 )
 
@@ -59,12 +60,21 @@ func runInSandbox(cmd *cobra.Command, f *policyFlags, argv []string) error {
 		ctx, cancel = context.WithTimeout(ctx, r.Limits.Timeout.Duration)
 		defer cancel()
 	}
+	var auditor *audit.Logger
+	if f.audit != "" {
+		auditor, err = audit.Open(f.audit)
+		if err != nil {
+			return fmt.Errorf("open audit log: %w", err)
+		}
+		defer auditor.Close()
+	}
 	res, err := sandbox.Run(ctx, r, sandbox.Command{
 		Argv:   argv,
 		Dir:    dir,
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Audit:  auditor,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hako: %v\n", err)

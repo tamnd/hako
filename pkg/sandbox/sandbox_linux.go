@@ -17,6 +17,7 @@ import (
 )
 
 func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
+	auditStart(c, r)
 	if len(r.Hosts) > 0 {
 		// The child lives in a fresh network namespace with its own
 		// loopback, so it cannot reach a proxy on the parent's loopback.
@@ -98,6 +99,7 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		err = fmt.Errorf("%w\ncreating user namespaces seems to be blocked; "+
 			"on Ubuntu 24.04+ try: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", err)
 	}
+	auditEnd(c, res)
 	return res, err
 }
 

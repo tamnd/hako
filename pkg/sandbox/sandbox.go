@@ -13,6 +13,7 @@ import (
 	"io"
 	"os/exec"
 
+	"github.com/tamnd/hako/pkg/audit"
 	"github.com/tamnd/hako/pkg/policy"
 )
 
@@ -29,6 +30,9 @@ type Command struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// Audit, when set, receives a record of the run and of every access
+	// the sandbox refused. Nil disables auditing.
+	Audit *audit.Logger
 }
 
 // Result reports how the child ended.
@@ -51,6 +55,28 @@ func Run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		return Result{ExitCode: ExitError}, errors.New("sandbox: empty argv")
 	}
 	return run(ctx, r, c)
+}
+
+// auditStart records what the sandbox was asked to run and under which
+// policy. It is a no-op when auditing is off.
+func auditStart(c Command, r *policy.Resolved) {
+	c.Audit.Log("run.start", map[string]any{
+		"argv":   c.Argv,
+		"dir":    c.Dir,
+		"net":    r.Net,
+		"hosts":  r.Hosts,
+		"reads":  len(r.Read),
+		"writes": len(r.Write),
+		"denies": len(r.Deny),
+	})
+}
+
+// auditEnd records how the run finished.
+func auditEnd(c Command, res Result) {
+	c.Audit.Log("run.end", map[string]any{
+		"exit_code": res.ExitCode,
+		"timed_out": res.TimedOut,
+	})
 }
 
 // wait runs the prepared command and translates the exit status.

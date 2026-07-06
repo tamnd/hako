@@ -22,6 +22,7 @@ func limitsSet(l policy.Limits) bool {
 }
 
 func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
+	auditStart(c, r)
 	env := BuildEnv(r.Env)
 	// A host allowlist means the network is mediated: start the parent
 	// side proxy, point the child at it, and let the Seatbelt profile
@@ -32,6 +33,9 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 			return Result{ExitCode: ExitError}, fmt.Errorf("sandbox: start proxy: %w", err)
 		}
 		defer px.Close()
+		px.OnDenied(func(host string) {
+			c.Audit.Log("net.deny", map[string]any{"host": host})
+		})
 		for k, v := range netproxy.ProxyEnv(px.Addr()) {
 			env = setEnv(env, k, v)
 		}
@@ -80,5 +84,7 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	cmd.WaitDelay = 3 * time.Second
-	return wait(ctx, cmd)
+	res, err := wait(ctx, cmd)
+	auditEnd(c, res)
+	return res, err
 }
