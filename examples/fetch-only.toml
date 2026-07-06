@@ -1,0 +1,14 @@
+# Policy for a scraper-style task: network on, filesystem nearly sealed.
+# It can read the system and this directory, and write only ./out.
+name = "fetch-only"
+
+[fs]
+read = ["/usr", "/bin", "/sbin", "/opt", "/etc", "/System", "/Library", "/private", "."]
+write = ["out", "/tmp"]
+
+[net]
+allow = true
+
+[limits]
+timeout = "5m"
+cpu_seconds = 120
