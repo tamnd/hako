@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tamnd/hako/pkg/netproxy"
 	"github.com/tamnd/hako/pkg/policy"
 	"github.com/tamnd/hako/pkg/seatbelt"
 	"github.com/tamnd/hako/pkg/shim"
@@ -21,6 +22,21 @@ func limitsSet(l policy.Limits) bool {
 }
 
 func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
+	env := BuildEnv(r.Env)
+	// A host allowlist means the network is mediated: start the parent
+	// side proxy, point the child at it, and let the Seatbelt profile
+	// confine the child to loopback.
+	if len(r.Hosts) > 0 {
+		px, err := netproxy.Start(r.Hosts)
+		if err != nil {
+			return Result{ExitCode: ExitError}, fmt.Errorf("sandbox: start proxy: %w", err)
+		}
+		defer px.Close()
+		for k, v := range netproxy.ProxyEnv(px.Addr()) {
+			env = setEnv(env, k, v)
+		}
+	}
+
 	argv := c.Argv
 	shimExe := ""
 	if limitsSet(r.Limits) {
@@ -50,7 +66,7 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 	args := append([]string{"-f", pf.Name()}, argv...)
 	cmd := exec.CommandContext(ctx, sandboxExec, args...)
 	cmd.Dir = c.Dir
-	cmd.Env = BuildEnv(r.Env)
+	cmd.Env = env
 	cmd.Stdin = c.Stdin
 	cmd.Stdout = c.Stdout
 	cmd.Stderr = c.Stderr

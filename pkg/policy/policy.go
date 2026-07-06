@@ -50,6 +50,11 @@ type FS struct {
 // and false once resolved.
 type Net struct {
 	Allow *bool `toml:"allow"`
+	// AllowHosts, when set, restricts the sandbox to reaching only
+	// these hosts, funnelled through a local CONNECT proxy. It implies
+	// network access even when Allow is false. Hosts may carry a port
+	// ("api.example.com:443"); without one every port is allowed.
+	AllowHosts []string `toml:"allow_hosts"`
 }
 
 // Limits are resource ceilings for the child. Zero means unlimited.
@@ -92,6 +97,10 @@ type Resolved struct {
 	Write  []string
 	Deny   []string
 	Net    bool
+	// Hosts is the CONNECT proxy allowlist. Non-empty means network is
+	// mediated: the sandbox may only reach loopback (the proxy), and
+	// the proxy only dials these hosts.
+	Hosts  []string
 	Limits Limits
 	Env    Env
 }
@@ -157,6 +166,7 @@ func Merge(dst, src *Policy) {
 	if src.Net.Allow != nil {
 		dst.Net.Allow = src.Net.Allow
 	}
+	dst.Net.AllowHosts = append(dst.Net.AllowHosts, src.Net.AllowHosts...)
 	if src.Limits.Timeout.Duration != 0 {
 		dst.Limits.Timeout = src.Limits.Timeout
 	}
@@ -199,6 +209,13 @@ func (p *Policy) Resolve() (*Resolved, error) {
 	}
 	if p.Net.Allow != nil {
 		r.Net = *p.Net.Allow
+	}
+	// A host allowlist mediates the network through a local proxy. It
+	// implies network access, but the only reachable address is the
+	// proxy on loopback; backends read r.Hosts to set that up.
+	if len(p.Net.AllowHosts) > 0 {
+		r.Hosts = dedup(slices.Clone(p.Net.AllowHosts))
+		r.Net = true
 	}
 	// Writing implies reading.
 	r.Read = append(r.Read, r.Write...)

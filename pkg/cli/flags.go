@@ -17,9 +17,10 @@ type policyFlags struct {
 	policy  string
 	ro      []string
 	rw      []string
-	deny    []string
-	net     bool
-	timeout time.Duration
+	deny      []string
+	net       bool
+	allowHost []string
+	timeout   time.Duration
 	mem     int
 	cpu     int
 	procs   int
@@ -36,7 +37,8 @@ func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
 	fl.StringArrayVar(&f.ro, "ro", nil, "allow reading this path (repeatable)")
 	fl.StringArrayVar(&f.rw, "rw", nil, "allow writing this path (repeatable)")
 	fl.StringArrayVar(&f.deny, "deny", nil, "deny this path even if otherwise allowed (repeatable)")
-	fl.BoolVar(&f.net, "net", false, "allow network access")
+	fl.BoolVar(&f.net, "net", false, "allow unrestricted network access")
+	fl.StringArrayVar(&f.allowHost, "allow-host", nil, "allow network only to this host, via a local proxy (repeatable; host or host:port, *.domain ok)")
 	fl.DurationVar(&f.timeout, "timeout", 0, "kill the command after this long (e.g. 5m)")
 	fl.IntVar(&f.mem, "mem", 0, "memory ceiling in MB (RLIMIT_AS)")
 	fl.IntVar(&f.cpu, "cpu", 0, "CPU time ceiling in seconds")
@@ -89,6 +91,7 @@ func (f *policyFlags) resolve(cmd *cobra.Command) (*policy.Resolved, string, err
 		net := f.net
 		over.Net.Allow = &net
 	}
+	over.Net.AllowHosts = f.allowHost
 	over.Limits = policy.Limits{
 		Timeout:    policy.Duration{Duration: f.timeout},
 		MemoryMB:   f.mem,

@@ -17,6 +17,16 @@ import (
 )
 
 func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
+	if len(r.Hosts) > 0 {
+		// The child lives in a fresh network namespace with its own
+		// loopback, so it cannot reach a proxy on the parent's loopback.
+		// Enforcing a host allowlist here would need a veth pair plus
+		// nftables, which is not wired yet. Refuse rather than pretend:
+		// on Linux use --net for full access, or run offline.
+		return Result{ExitCode: ExitError}, errors.New(
+			"sandbox: --allow-host is not supported on Linux yet " +
+				"(macOS only); use --net for full network or omit it to stay offline")
+	}
 	spec := nsbox.Spec{
 		Argv:   c.Argv,
 		Dir:    c.Dir,
