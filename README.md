@@ -31,6 +31,9 @@ hako run --allow-host api.openai.com --allow-host '*.githubusercontent.com' -- .
 # record what the run did and every access it was denied
 hako run --audit run.jsonl -- ./agent
 
+# let the agent edit a copy-on-write clone, then review the diff
+hako run --overlay -- ./agent
+
 # belt and suspenders: tight walls plus hard ceilings
 hako run -p restricted --timeout 5m --mem 1024 -- ./agent-task.sh
 
@@ -103,6 +106,29 @@ Three modes, cheapest first:
 Wall-clock timeout is enforced by hako killing the process group.
 Memory, cpu seconds, process count, open files, and file size are applied inside the sandbox by hako re-execing itself, so the ceiling lands on the child and never on hako.
 Memory is the exception worth knowing: on Linux it is a cgroup v2 `memory.max` (RLIMIT_AS breaks Go and the JVM, so it is avoided), and a run over the cap is OOM-killed; on macOS it is RLIMIT_AS, which is coarse, so treat the timeout as the real backstop there.
+
+## Overlay mode
+
+`--overlay` runs the command against a copy-on-write clone of the working
+directory instead of the directory itself. The command writes freely into
+the clone; your original tree is never touched. When it finishes, hako
+prints what changed and where the clone lives, so you can review the diff
+before applying anything.
+
+```
+hako run --overlay -- ./agent-that-edits-files
+hako: overlay: 3 change(s)
+  ~ src/main.go
+  + src/new.go
+  - old.txt
+review the writes at: /tmp/hako-overlay-1234/project
+```
+
+On macOS the clone is an APFS `clonefile`, so it is near-instant and uses
+no extra disk until a file is written. Elsewhere it is a plain recursive
+copy. The command sees the clone as its working directory, so relative
+paths land in the clone; absolute paths back to the original are still
+governed by the normal policy.
 
 ## As a library
 

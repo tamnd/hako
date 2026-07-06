@@ -30,6 +30,7 @@ type policyFlags struct {
 	passEnv []string
 	allEnv  bool
 	audit   string
+	overlay bool
 }
 
 func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
@@ -50,6 +51,7 @@ func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {
 	fl.StringArrayVar(&f.passEnv, "pass-env", nil, "pass this env var through (glob ok, repeatable)")
 	fl.BoolVar(&f.allEnv, "all-env", false, "pass the entire environment through (leaks tokens, be sure)")
 	fl.StringVar(&f.audit, "audit", "", "append a JSONL record of the run and every denied access to this file")
+	fl.BoolVar(&f.overlay, "overlay", false, "run against a copy-on-write clone of the workdir and report the diff, leaving the original untouched")
 }
 
 // resolve turns preset/file/flags into the effective policy plus the

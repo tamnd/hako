@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tamnd/hako/pkg/audit"
+	"github.com/tamnd/hako/pkg/overlay"
 	"github.com/tamnd/hako/pkg/sandbox"
 )
 
@@ -54,6 +55,18 @@ func runInSandbox(cmd *cobra.Command, f *policyFlags, argv []string) error {
 	if err != nil {
 		return err
 	}
+	var ov *overlay.Overlay
+	if f.overlay {
+		ov, err = overlay.Materialize(dir)
+		if err != nil {
+			return fmt.Errorf("overlay: %w", err)
+		}
+		// Run inside the clone and let it be written; the original tree
+		// stays as it was.
+		dir = ov.Dir
+		r.Read = append(r.Read, ov.Dir)
+		r.Write = append(r.Write, ov.Dir)
+	}
 	ctx := cmd.Context()
 	if r.Limits.Timeout.Duration > 0 {
 		var cancel context.CancelFunc
@@ -83,6 +96,33 @@ func runInSandbox(cmd *cobra.Command, f *policyFlags, argv []string) error {
 	if res.TimedOut {
 		fmt.Fprintf(os.Stderr, "hako: timed out after %s\n", r.Limits.Timeout.Duration)
 	}
+	if ov != nil {
+		reportOverlay(ov)
+	}
 	os.Exit(res.ExitCode)
 	return nil
+}
+
+// reportOverlay prints what the command changed in the clone and where
+// the clone lives, so the user can review or apply it. On an error, or
+// when nothing changed, it cleans the clone up.
+func reportOverlay(ov *overlay.Overlay) {
+	changes, err := ov.Diff()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hako: overlay diff: %v\n", err)
+		return
+	}
+	if len(changes) == 0 {
+		fmt.Fprintln(os.Stderr, "hako: overlay: no changes")
+		ov.Cleanup()
+		return
+	}
+	fmt.Fprintf(os.Stderr, "hako: overlay: %d change(s)\n", len(changes))
+	for _, c := range changes {
+		mark := map[overlay.ChangeKind]string{
+			overlay.Added: "+", overlay.Modified: "~", overlay.Removed: "-",
+		}[c.Kind]
+		fmt.Fprintf(os.Stderr, "  %s %s\n", mark, c.Path)
+	}
+	fmt.Fprintf(os.Stderr, "review the writes at: %s\n", ov.Dir)
 }
