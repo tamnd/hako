@@ -14,23 +14,23 @@ import (
 const localPolicy = ".hako.toml"
 
 type policyFlags struct {
-	policy  string
-	ro      []string
-	rw      []string
+	policy    string
+	ro        []string
+	rw        []string
 	deny      []string
 	net       bool
 	allowHost []string
 	timeout   time.Duration
-	mem     int
-	cpu     int
-	procs   int
-	files   int
-	workdir string
-	env     []string
-	passEnv []string
-	allEnv  bool
-	audit   string
-	overlay bool
+	mem       int
+	cpu       int
+	procs     int
+	files     int
+	workdir   string
+	env       []string
+	passEnv   []string
+	allEnv    bool
+	audit     string
+	overlay   bool
 }
 
 func addPolicyFlags(cmd *cobra.Command, f *policyFlags) {

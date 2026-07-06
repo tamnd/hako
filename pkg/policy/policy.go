@@ -92,11 +92,11 @@ type Policy struct {
 // Resolved is a policy after expansion: absolute deduped paths, write
 // folded into read, default denies applied. Backends consume this.
 type Resolved struct {
-	Name   string
-	Read   []string
-	Write  []string
-	Deny   []string
-	Net    bool
+	Name  string
+	Read  []string
+	Write []string
+	Deny  []string
+	Net   bool
 	// Hosts is the CONNECT proxy allowlist. Non-empty means network is
 	// mediated: the sandbox may only reach loopback (the proxy), and
 	// the proxy only dials these hosts.
