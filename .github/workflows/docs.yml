@@ -1,0 +1,139 @@
+name: docs
+
+# Builds the documentation site with tago and publishes it. GitHub Pages is
+# the primary target and needs no secrets beyond the built-in token. The
+# Cloudflare Pages mirror is best-effort: it only runs when the Cloudflare
+# secrets are set, so a fork without them still gets the Pages site.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+      - "scripts/ensure_cloudflare_pages.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  deployments: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: true
+          # Sitemap lastmod comes from the latest content commit.
+          fetch-depth: 0
+
+      - name: Checkout tago
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: tamnd/tago
+          path: .tago-src
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: .tago-src/go.mod
+          cache: false
+
+      - name: Cache tago binary
+        id: tago-bin-cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: /usr/local/bin/tago
+          key: tago-bin-${{ runner.os }}-${{ hashFiles('.tago-src/go.sum', '.tago-src/**/*.go') }}
+
+      - name: Build tago
+        if: steps.tago-bin-cache.outputs.cache-hit != 'true'
+        run: |
+          cd .tago-src
+          go build -o /usr/local/bin/tago ./cmd/tago/
+
+      # Two builds, one per deploy target. The theme links every page and asset
+      # with absURL, so each output carries its own base path: the Pages build
+      # gets the /hako/ sub-path, the Cloudflare build gets the domain root.
+      - name: Build for GitHub Pages
+        working-directory: docs
+        run: tago build --base-url "https://tamnd.github.io/hako/" --output public-pages
+
+      # tago absURLs theme links but passes markdown content links through, so
+      # root-relative links in content need the sub-path prefixed for the Pages
+      # mirror. The Cloudflare build serves from the root and needs none.
+      - name: Rewrite content links for the Pages sub-path
+        run: |
+          find docs/public-pages -name '*.html' -print0 |
+            xargs -0 perl -pi -e 's|(href=")/(?!/)|${1}/hako/|g; s|(src=")/(?!/)|${1}/hako/|g'
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: docs/public-pages
+
+      - name: Build for Cloudflare Pages
+        working-directory: docs
+        run: tago build --base-url "https://hako.tamnd.com/" --output public-cf
+
+      - name: Upload Cloudflare artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-cf
+          path: docs/public-cf
+          retention-days: 1
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+
+  deploy-cloudflare:
+    runs-on: ubuntu-latest
+    needs: build
+    # Skip cleanly when the Cloudflare secrets are not configured.
+    if: ${{ github.event_name != 'pull_request' }}
+    concurrency:
+      group: cloudflare-pages-hako
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts/
+
+      - name: Download Cloudflare artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-cf
+          path: public-cf
+
+      - name: Ensure Cloudflare Pages config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 scripts/ensure_cloudflare_pages.py --project hako --domain hako.tamnd.com --zone tamnd.com
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx -y wrangler@4 pages deploy public-cf \
+            --project-name=hako \
+            --branch=main \
+            --commit-dirty=true

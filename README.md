@@ -209,7 +209,7 @@ For truly hostile code use a virtual machine; for an agent that mostly needs to 
 Platform support is macOS and Linux.
 The Linux backend needs an unprivileged-user-namespace kernel (most distros since 5.10). On top of namespaces it installs a seccomp filter that blocks ptrace, kexec, bpf, and module loading, and caps memory with cgroup v2 where the session delegates it. The one gap versus macOS is host-allowlist networking, which is not wired for the fresh netns yet.
 
-See [docs/policy.md](docs/policy.md) for every config key and [docs/security.md](docs/security.md) for the threat model and what hako does and does not defend against.
+Full documentation lives at [hako.tamnd.com](https://hako.tamnd.com): every [config key](https://hako.tamnd.com/reference/policy-keys/), the [CLI reference](https://hako.tamnd.com/reference/cli/), and the [threat model](https://hako.tamnd.com/reference/security/) covering what hako does and does not defend against.
 
 ## License
 

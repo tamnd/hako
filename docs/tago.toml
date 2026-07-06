@@ -1,0 +1,10 @@
+title       = "hako"
+baseURL     = "https://hako.tamnd.com/"
+description = "hako (箱, box) runs a command inside an OS-level sandbox. Hand a shell to an AI agent without handing it your SSH keys, your dotfiles, or your network. The command sees only what the policy allows, enforced by the kernel through Seatbelt on macOS and namespaces on Linux."
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/hako"

@@ -1,3 +1,5 @@
 /hako
 /dist/
 *.test
+/docs/public-cf/
+/docs/public-pages/
