@@ -130,6 +130,32 @@ copy. The command sees the clone as its working directory, so relative
 paths land in the clone; absolute paths back to the original are still
 governed by the normal policy.
 
+## Sessions
+
+Starting a sandbox per command is cheap, but sometimes you want many
+commands to share one box: the same policy, the same working area, the
+writes from one visible to the next. That is a session.
+
+```sh
+# one terminal: start the box (foreground)
+hako session start -p dev --overlay
+
+# another terminal: run as many commands as you like against it
+hako session exec -- npm install
+hako session exec -- npm test
+hako session exec -- ./build.sh
+
+# stop it; with --overlay you get the accumulated diff to review
+hako session stop
+```
+
+Each `exec` runs inside the session's policy and working directory and
+sees what earlier commands wrote. Pair it with `--overlay` and the whole
+sequence of edits lands in one clone you review on `stop`, leaving the
+original untouched. Commands talk to the server over a unix socket
+(`--socket` to place it); `exec` streams stdout and stderr back and
+passes the exit code through.
+
 ## As a library
 
 ```go

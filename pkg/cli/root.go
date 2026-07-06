@@ -20,7 +20,7 @@ func Execute(version string) {
 			"a built-in preset, a .hako.toml file, or flags.",
 		SilenceUsage: true,
 	}
-	root.AddCommand(newRunCmd(), newShellCmd(), newCheckCmd(), newPresetsCmd())
+	root.AddCommand(newRunCmd(), newShellCmd(), newCheckCmd(), newPresetsCmd(), newSessionCmd())
 	if err := fang.Execute(context.Background(), root, fang.WithVersion(version)); err != nil {
 		os.Exit(1)
 	}
