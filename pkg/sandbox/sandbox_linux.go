@@ -2,10 +2,14 @@ package sandbox
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/tamnd/hako/pkg/nsbox"
 	"github.com/tamnd/hako/pkg/policy"
@@ -13,6 +17,17 @@ import (
 )
 
 func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
+	auditStart(c, r)
+	if len(r.Hosts) > 0 {
+		// The child lives in a fresh network namespace with its own
+		// loopback, so it cannot reach a proxy on the parent's loopback.
+		// Enforcing a host allowlist here would need a veth pair plus
+		// nftables, which is not wired yet. Refuse rather than pretend:
+		// on Linux use --net for full access, or run offline.
+		return Result{ExitCode: ExitError}, errors.New(
+			"sandbox: --allow-host is not supported on Linux yet " +
+				"(macOS only); use --net for full network or omit it to stay offline")
+	}
 	spec := nsbox.Spec{
 		Argv:   c.Argv,
 		Dir:    c.Dir,
@@ -28,6 +43,12 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		return Result{ExitCode: ExitError}, err
 	}
 
+	cg, err := nsbox.PrepareCgroup(r.Limits)
+	if err != nil {
+		return Result{ExitCode: ExitError}, err
+	}
+	defer cg.Cleanup()
+
 	cmd := exec.CommandContext(ctx, "/proc/self/exe", shim.InitCmd)
 	cmd.Env = []string{nsbox.EnvSpec + "=" + enc}
 	cmd.Stdin = c.Stdin
@@ -39,7 +60,7 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 	if !r.Net {
 		flags |= syscall.CLONE_NEWNET
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{
+	attr := &syscall.SysProcAttr{
 		Cloneflags: uintptr(flags),
 		UidMappings: []syscall.SysProcIDMap{
 			{ContainerID: os.Getuid(), HostID: os.Getuid(), Size: 1},
@@ -51,6 +72,41 @@ func run(ctx context.Context, r *policy.Resolved, c Command) (Result, error) {
 		// Killing init (namespace pid 1) tears down the whole tree.
 		Pdeathsig: syscall.SIGKILL,
 	}
+	if fd := cg.FD(); fd >= 0 {
+		attr.UseCgroupFD = true
+		attr.CgroupFD = fd
+	}
+	cmd.SysProcAttr = attr
 	cmd.WaitDelay = 3 * time.Second
-	return wait(ctx, cmd)
+
+	res, err := wait(ctx, cmd)
+	// clone3 into a cgroup fails on delegated-but-unusable trees
+	// (EOPNOTSUPP/EINVAL) before the child ever starts. Cgroups are a
+	// bonus over rlimits, never a regression: on such a failure, drop
+	// the cgroup and run again the plain way.
+	if err != nil && attr.UseCgroupFD && cloneRejected(err) {
+		cg.Cleanup()
+		attr.UseCgroupFD = false
+		attr.CgroupFD = 0
+		retry := exec.CommandContext(ctx, "/proc/self/exe", shim.InitCmd)
+		retry.Env = cmd.Env
+		retry.Stdin, retry.Stdout, retry.Stderr = c.Stdin, c.Stdout, c.Stderr
+		retry.SysProcAttr = attr
+		retry.WaitDelay = 3 * time.Second
+		res, err = wait(ctx, retry)
+	}
+	if err != nil && errors.Is(err, os.ErrPermission) {
+		err = fmt.Errorf("%w\ncreating user namespaces seems to be blocked; "+
+			"on Ubuntu 24.04+ try: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", err)
+	}
+	auditEnd(c, res)
+	return res, err
+}
+
+// cloneRejected reports whether the error is the kernel refusing the
+// clone before exec, as opposed to the child running and failing.
+func cloneRejected(err error) bool {
+	return errors.Is(err, unix.EOPNOTSUPP) ||
+		errors.Is(err, unix.EINVAL) ||
+		errors.Is(err, unix.EBUSY)
 }

@@ -86,9 +86,17 @@ func Profile(r *policy.Resolved, shimExe string) (string, error) {
 		w("(allow file-read* file-write*%s)", writes)
 	}
 	w("")
-	if r.Net {
+	switch {
+	case len(r.Hosts) > 0:
+		// Mediated network: the child may only reach loopback, where the
+		// parent's allowlisting proxy listens. Everything else is denied,
+		// so a compromised child cannot dial arbitrary hosts directly.
+		w("(allow network-outbound (remote ip \"localhost:*\"))")
+		w("(allow network-bind (local ip \"localhost:*\"))")
+		w("(deny network-outbound)")
+	case r.Net:
 		w("(allow network*)")
-	} else {
+	default:
 		w("(deny network*)")
 	}
 	// Denies last: SBPL last match wins, so these beat every allow

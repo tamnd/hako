@@ -12,6 +12,13 @@ import (
 // Setup builds the sandbox root and pivots into it. It runs as pid 1 of
 // the new namespaces, with full capabilities inside the user namespace.
 func Setup(s *Spec) error {
+	if !s.Net {
+		// Fresh netns: bring lo up so localhost-only tools work.
+		// The kernel assigns 127.0.0.1 and ::1 automatically.
+		if err := upLoopback(); err != nil {
+			fmt.Fprintf(os.Stderr, "hako: loopback: %v\n", err)
+		}
+	}
 	// Our mount changes must never propagate back to the host.
 	if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
 		return fmt.Errorf("make / private: %w", err)
@@ -72,6 +79,11 @@ func Setup(s *Spec) error {
 	}
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("chdir %s: %w", dir, err)
+	}
+	// Defence in depth: refuse a handful of dangerous syscalls. Never
+	// fatal; the namespaces are the real wall.
+	if err := installSeccomp(); err != nil {
+		fmt.Fprintf(os.Stderr, "hako: seccomp: %v\n", err)
 	}
 	return nil
 }
@@ -209,6 +221,24 @@ func mountDev(root string) error {
 		}
 	}
 	return nil
+}
+
+// upLoopback sets IFF_UP on lo via the classic SIOCSIFFLAGS ioctl.
+func upLoopback() error {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(fd)
+	ifr, err := unix.NewIfreq("lo")
+	if err != nil {
+		return err
+	}
+	if err := unix.IoctlIfreq(fd, unix.SIOCGIFFLAGS, ifr); err != nil {
+		return err
+	}
+	ifr.SetUint16(ifr.Uint16() | unix.IFF_UP)
+	return unix.IoctlIfreq(fd, unix.SIOCSIFFLAGS, ifr)
 }
 
 // mask hides a denied path with an empty, unreadable mount.

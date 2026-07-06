@@ -69,7 +69,7 @@ func ApplyLimits(l policy.Limits) error {
 		return unix.Setrlimit(res, &unix.Rlimit{Cur: v, Max: v})
 	}
 	const mb = 1 << 20
-	if err := set(unix.RLIMIT_AS, uint64(l.MemoryMB)*mb); err != nil {
+	if err := applyMemLimit(set, l.MemoryMB); err != nil {
 		return err
 	}
 	if err := set(unix.RLIMIT_CPU, uint64(l.CPUSeconds)); err != nil {

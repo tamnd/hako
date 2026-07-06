@@ -25,6 +25,15 @@ hako run -- npm test
 # open the network for one command
 hako run --net -- python fetch.py
 
+# or open it to named hosts only, everything else refused
+hako run --allow-host api.openai.com --allow-host '*.githubusercontent.com' -- ./agent
+
+# record what the run did and every access it was denied
+hako run --audit run.jsonl -- ./agent
+
+# let the agent edit a copy-on-write clone, then review the diff
+hako run --overlay -- ./agent
+
 # belt and suspenders: tight walls plus hard ceilings
 hako run -p restricted --timeout 5m --mem 1024 -- ./agent-task.sh
 
@@ -51,7 +60,8 @@ write = [".", "/tmp"]   # subtrees it may also write
 deny = ["~/notes"]      # always wins, even over write
 
 [net]
-allow = false
+allow = false                     # true opens the whole network
+allow_hosts = ["api.openai.com"]  # or mediate: only these hosts, via a local proxy
 
 [limits]
 timeout = "10m"
@@ -83,11 +93,68 @@ Only PATH, HOME, TERM, locale and a few similar variables cross into the box unl
 
 `standard` is the default when no `.hako.toml` is present.
 
+## Network
+
+Three modes, cheapest first:
+
+- offline (default): no network at all. On Linux the command runs in its own network namespace with only loopback up.
+- allowlist (`--allow-host`, `[net] allow_hosts`): the command's traffic is funnelled through a small CONNECT proxy that only dials the hosts you name; the sandbox itself is confined to loopback, so it cannot reach anything else even by IP. Hosts may pin a port (`api.example.com:443`) or match subdomains (`*.example.com`). macOS only for now; on Linux it errors out rather than pretend to enforce.
+- open (`--net`): full network, no mediation.
+
 ## Limits
 
 Wall-clock timeout is enforced by hako killing the process group.
-The rest are rlimits (memory via RLIMIT_AS, cpu seconds, process count, open files, file size), applied inside the sandbox by hako re-execing itself, so the ceiling lands on the child and never on hako.
-On macOS RLIMIT_AS is advisory at best; treat the timeout as the real backstop there.
+Memory, cpu seconds, process count, open files, and file size are applied inside the sandbox by hako re-execing itself, so the ceiling lands on the child and never on hako.
+Memory is the exception worth knowing: on Linux it is a cgroup v2 `memory.max` (RLIMIT_AS breaks Go and the JVM, so it is avoided), and a run over the cap is OOM-killed; on macOS it is RLIMIT_AS, which is coarse, so treat the timeout as the real backstop there.
+
+## Overlay mode
+
+`--overlay` runs the command against a copy-on-write clone of the working
+directory instead of the directory itself. The command writes freely into
+the clone; your original tree is never touched. When it finishes, hako
+prints what changed and where the clone lives, so you can review the diff
+before applying anything.
+
+```
+hako run --overlay -- ./agent-that-edits-files
+hako: overlay: 3 change(s)
+  ~ src/main.go
+  + src/new.go
+  - old.txt
+review the writes at: /tmp/hako-overlay-1234/project
+```
+
+On macOS the clone is an APFS `clonefile`, so it is near-instant and uses
+no extra disk until a file is written. Elsewhere it is a plain recursive
+copy. The command sees the clone as its working directory, so relative
+paths land in the clone; absolute paths back to the original are still
+governed by the normal policy.
+
+## Sessions
+
+Starting a sandbox per command is cheap, but sometimes you want many
+commands to share one box: the same policy, the same working area, the
+writes from one visible to the next. That is a session.
+
+```sh
+# one terminal: start the box (foreground)
+hako session start -p dev --overlay
+
+# another terminal: run as many commands as you like against it
+hako session exec -- npm install
+hako session exec -- npm test
+hako session exec -- ./build.sh
+
+# stop it; with --overlay you get the accumulated diff to review
+hako session stop
+```
+
+Each `exec` runs inside the session's policy and working directory and
+sees what earlier commands wrote. Pair it with `--overlay` and the whole
+sequence of edits lands in one clone you review on `stop`, leaving the
+original untouched. Commands talk to the server over a unix socket
+(`--socket` to place it); `exec` streams stdout and stderr back and
+passes the exit code through.
 
 ## As a library
 
@@ -119,7 +186,9 @@ The sandboxed process shares your kernel, and kernel bugs exist.
 For truly hostile code use a virtual machine; for an agent that mostly needs to be kept from your credentials and from `rm -rf ~`, hako is the right weight.
 
 Platform support is macOS and Linux.
-The Linux backend is young: it needs an unprivileged-user-namespace kernel (most distros since 5.10), and loopback inside the offline netns is not wired up yet.
+The Linux backend needs an unprivileged-user-namespace kernel (most distros since 5.10). On top of namespaces it installs a seccomp filter that blocks ptrace, kexec, bpf, and module loading, and caps memory with cgroup v2 where the session delegates it. The one gap versus macOS is host-allowlist networking, which is not wired for the fresh netns yet.
+
+See [docs/policy.md](docs/policy.md) for every config key and [docs/security.md](docs/security.md) for the threat model and what hako does and does not defend against.
 
 ## License
 
