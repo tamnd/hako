@@ -12,9 +12,30 @@ No root, no daemon, no containers to babysit.
 
 ## Install
 
+macOS, with Homebrew:
+
+```sh
+brew install tamnd/tap/hako
+```
+
+Linux, from the release packages:
+
+```sh
+# Debian/Ubuntu
+sudo dpkg -i hako_*_amd64.deb
+# Fedora/RHEL
+sudo rpm -i hako-*.x86_64.rpm
+# Alpine
+sudo apk add --allow-untrusted hako_*_x86_64.apk
+```
+
+Or grab a prebuilt archive from the [releases page](https://github.com/tamnd/hako/releases), or build from source:
+
 ```sh
 go install github.com/tamnd/hako@latest
 ```
+
+Windows is not supported: hako sandboxes with host facilities that Windows does not offer. Run it inside WSL, where it uses the Linux backend.
 
 ## Quickstart
 
