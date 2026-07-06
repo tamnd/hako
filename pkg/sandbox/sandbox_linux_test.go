@@ -189,6 +189,41 @@ func TestEnvScrubbed(t *testing.T) {
 	}
 }
 
+func TestSeccompActive(t *testing.T) {
+	sandboxWorks(t)
+	r := testPolicy(t, nil, nil)
+	// The kernel reports filter mode (2) in /proc/self/status once a
+	// seccomp BPF program is installed.
+	code, out := runCmd(t, r, "grep", "Seccomp:", "/proc/self/status")
+	if code != 0 {
+		t.Skipf("cannot read seccomp status: %s", out)
+	}
+	if !strings.Contains(out, "2") {
+		t.Errorf("seccomp filter not active: %q", strings.TrimSpace(out))
+	}
+}
+
+func TestLimitsDoNotCrashInit(t *testing.T) {
+	sandboxWorks(t)
+	// Regression: applying a memory limit once made the reaper's Go
+	// init crash under RLIMIT_AS. Setting every limit must still run.
+	p := &policy.Policy{
+		FS: policy.FS{Read: []string{"/"}},
+		Limits: policy.Limits{
+			MemoryMB: 128, CPUSeconds: 30, Processes: 64,
+			OpenFiles: 256, FileSizeMB: 8,
+		},
+	}
+	r, err := p.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCmd(t, r, "echo", "alive")
+	if code != 0 || strings.TrimSpace(out) != "alive" {
+		t.Errorf("limited run failed: code=%d out=%q", code, out)
+	}
+}
+
 func TestHostnameIsolated(t *testing.T) {
 	sandboxWorks(t)
 	r := testPolicy(t, nil, nil)

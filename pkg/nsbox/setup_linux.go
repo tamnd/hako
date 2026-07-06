@@ -80,6 +80,11 @@ func Setup(s *Spec) error {
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("chdir %s: %w", dir, err)
 	}
+	// Defence in depth: refuse a handful of dangerous syscalls. Never
+	// fatal; the namespaces are the real wall.
+	if err := installSeccomp(); err != nil {
+		fmt.Fprintf(os.Stderr, "hako: seccomp: %v\n", err)
+	}
 	return nil
 }
 
