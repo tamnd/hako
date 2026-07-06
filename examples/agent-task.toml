@@ -1,0 +1,18 @@
+# Policy for letting an agent build and test a project offline.
+# Reads everything except secrets, writes only the project and tmp.
+name = "agent-task"
+
+[fs]
+read = ["/"]
+write = [".", "/tmp"]
+
+[net]
+allow = false
+
+[limits]
+timeout = "10m"
+memory_mb = 2048
+processes = 256
+
+[env]
+pass = ["GO*", "NODE_*"]
